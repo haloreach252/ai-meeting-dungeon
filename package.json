@@ -1,0 +1,10 @@
+{
+  "name": "ai-meeting-dungeon-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A/B demo: the same dungeon spec built by a freeform goal loop (A) vs a verified workflow (B), judged by an independent harness.",
+  "scripts": {
+    "serve": "npx --yes http-server web -p 8000 -c-1"
+  }
+}

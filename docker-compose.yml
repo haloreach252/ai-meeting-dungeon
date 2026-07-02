@@ -1,0 +1,8 @@
+services:
+  dungeon-demo:
+    build: .
+    container_name: ai-meeting-demo
+    restart: unless-stopped
+    ports:
+      # Host-local only; the host nginx reverse-proxies the public subdomain here.
+      - "127.0.0.1:8087:80"

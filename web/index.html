@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grid Dungeon — A/B Harness</title>
+<style>
+  :root {
+    --bg: #14161c;
+    --panel: #1d2027;
+    --border: #33384a;
+    --text: #e6e8ef;
+    --muted: #9aa0b4;
+    --accent: #6ea8fe;
+    --good: #22c55e;
+    --bad: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, "Segoe UI", sans-serif;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.75rem 1rem;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 1rem; font-weight: 600; margin: 0 auto 0 0; }
+  button, input {
+    font: inherit;
+    color: var(--text);
+    background: #262b36;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.45rem 0.9rem;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #2a4470; border-color: #3d5f9e; }
+  input#seed { width: 9rem; }
+  label.toggle { display: flex; align-items: center; gap: 0.4rem; color: var(--muted); cursor: pointer; user-select: none; }
+  main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    padding: 1rem;
+    min-height: 0;
+  }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .pane {
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    min-height: 420px;
+  }
+  .pane h2 {
+    margin: 0;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+  .frame-wrap { position: relative; flex: 1; }
+  iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #0e1014; }
+  .placeholder {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background: #0e1014;
+    color: var(--muted);
+    text-align: center;
+    padding: 1rem;
+  }
+  .placeholder.show { display: flex; }
+  .placeholder .big { font-size: 2rem; }
+  .verdict {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    display: none;
+    padding: 0.3rem 0.7rem;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 0.8rem;
+    letter-spacing: 0.05em;
+    color: #fff;
+  }
+  .verdict.show { display: block; }
+  .verdict.solvable { background: var(--good); }
+  .verdict.unsolvable { background: var(--bad); }
+  .verdict.unknown { background: #555c70; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Grid Dungeon — side by side</h1>
+  <button id="newLevel" class="primary">New Level</button>
+  <input id="seed" type="number" placeholder="seed" inputmode="numeric">
+  <button id="applySeed">Set Seed</button>
+  <label class="toggle"><input id="reveal" type="checkbox"> Reveal</label>
+</header>
+<main>
+  <section class="pane">
+    <h2>Version 1</h2>
+    <div class="frame-wrap">
+      <iframe id="frame-a" src="dungeon-a/index.html" title="Version 1"></iframe>
+      <div class="placeholder" id="ph-a"><span class="big">&#128679;</span><strong>Version 1 isn't built yet</strong><span>This pane will come alive once its build run finishes.</span></div>
+      <div class="verdict" id="v-a"></div>
+    </div>
+  </section>
+  <section class="pane">
+    <h2>Version 2</h2>
+    <div class="frame-wrap">
+      <iframe id="frame-b" src="dungeon-b/index.html" title="Version 2"></iframe>
+      <div class="placeholder" id="ph-b"><span class="big">&#128679;</span><strong>Version 2 isn't built yet</strong><span>This pane will come alive once its build run finishes.</span></div>
+      <div class="verdict" id="v-b"></div>
+    </div>
+  </section>
+</main>
+<script>
+// ---------------------------------------------------------------------------
+// Harness-owned canonical solver (spec §4). Independent on purpose: it never
+// imports either game's code — it judges each pane purely via getLevel().
+// A level is solvable iff BFS reaches K from S (door closed), then E from K
+// (door open). With no K/D pair: just S -> E.
+// ---------------------------------------------------------------------------
+function isSolvable(level) {
+  const { grid, start, exit, key, door } = level;
+  const rows = grid.length, cols = grid[0].length;
+  const isWall = (r, c) => {
+    const t = String(grid[r][c]).toLowerCase();
+    return t === 'wall' || t === '#' || t === 'w';
+  };
+  const at = (pos, r, c) => pos && pos[0] === r && pos[1] === c;
+  function bfs(from, to, doorOpen) {
+    const seen = new Set([from[0] + ',' + from[1]]);
+    const queue = [from];
+    while (queue.length) {
+      const [r, c] = queue.shift();
+      if (r === to[0] && c === to[1]) return true;
+      for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nr = r + dr, nc = c + dc;
+        if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) continue;
+        const id = nr + ',' + nc;
+        if (seen.has(id) || isWall(nr, nc)) continue;
+        if (!doorOpen && at(door, nr, nc)) continue;
+        seen.add(id);
+        queue.push([nr, nc]);
+      }
+    }
+    return false;
+  }
+  if (!key || !door) return bfs(start, exit, true);
+  return bfs(start, key, false) && bfs(key, exit, true);
+}
+
+// ---------------------------------------------------------------------------
+// Pane wiring: each pane is judged only through the window.__demo contract
+// (spec §6). A pane whose page is missing or doesn't expose __demo shows a
+// friendly placeholder instead of erroring.
+// ---------------------------------------------------------------------------
+const panes = [
+  { frame: document.getElementById('frame-a'), placeholder: document.getElementById('ph-a'), verdict: document.getElementById('v-a') },
+  { frame: document.getElementById('frame-b'), placeholder: document.getElementById('ph-b'), verdict: document.getElementById('v-b') },
+];
+const revealBox = document.getElementById('reveal');
+
+function demoOf(pane) {
+  try {
+    return pane.frame.contentWindow && pane.frame.contentWindow.__demo || null;
+  } catch (err) {
+    return null; // cross-origin or dead frame — treat as not built
+  }
+}
+
+function refreshPane(pane) {
+  const demo = demoOf(pane);
+  pane.placeholder.classList.toggle('show', !demo);
+  updateVerdict(pane, demo);
+}
+
+function updateVerdict(pane, demo = demoOf(pane)) {
+  const el = pane.verdict;
+  el.className = 'verdict';
+  if (!revealBox.checked || !demo) return;
+  try {
+    const level = demo.getLevel();
+    const ok = isSolvable(level);
+    el.textContent = ok ? 'SOLVABLE' : 'UNSOLVABLE';
+    el.classList.add('show', ok ? 'solvable' : 'unsolvable');
+  } catch (err) {
+    el.textContent = 'NO LEVEL';
+    el.classList.add('show', 'unknown');
+  }
+}
+
+function callBoth(seed) {
+  for (const pane of panes) {
+    const demo = demoOf(pane);
+    if (!demo) {
+      // Not built (or just rebuilt): reload the frame so a fresh build appears
+      // without a manual page refresh.
+      pane.frame.src = pane.frame.src;
+      continue;
+    }
+    try {
+      seed === undefined ? demo.newLevel() : demo.newLevel(seed);
+    } catch (err) {
+      console.warn('newLevel failed for', pane.frame.id, err);
+    }
+    updateVerdict(pane, demo);
+  }
+}
+
+document.getElementById('newLevel').addEventListener('click', () => callBoth());
+document.getElementById('applySeed').addEventListener('click', applySeed);
+document.getElementById('seed').addEventListener('keydown', e => { if (e.key === 'Enter') applySeed(); });
+revealBox.addEventListener('change', () => panes.forEach(p => updateVerdict(p)));
+
+function applySeed() {
+  const raw = document.getElementById('seed').value.trim();
+  if (raw === '') return;
+  const seed = Number(raw);
+  if (!Number.isFinite(seed)) return;
+  callBoth(seed);
+}
+
+for (const pane of panes) {
+  pane.frame.addEventListener('load', () => refreshPane(pane));
+  pane.frame.addEventListener('error', () => refreshPane(pane));
+}
+// Fallback: if a frame never fires load (e.g. blocked), still show placeholders.
+setTimeout(() => panes.forEach(refreshPane), 1500);
+</script>
+</body>
+</html>
