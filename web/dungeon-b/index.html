@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grid Dungeon</title>
+<style>
+  :root {
+    --bg: #0e1014;
+    --wall: #2b3040;
+    --floor: #171a22;
+    --text: #e6e8ef;
+    --muted: #9aa0b4;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, "Segoe UI", sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+  #hud {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  #hud button {
+    font: inherit;
+    color: var(--text);
+    background: #262b36;
+    border: 1px solid #33384a;
+    border-radius: 6px;
+    padding: 0.35rem 0.8rem;
+    cursor: pointer;
+  }
+  #hud button:hover { border-color: #6ea8fe; }
+  #board {
+    display: grid;
+    gap: 2px;
+    background: var(--bg);
+  }
+  .tile {
+    width: clamp(18px, 4.5vmin, 34px);
+    height: clamp(18px, 4.5vmin, 34px);
+    border-radius: 3px;
+    background: var(--floor);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(11px, 3vmin, 20px);
+    line-height: 1;
+  }
+  .tile.wall { background: var(--wall); }
+  #status { min-height: 1.4rem; font-weight: 700; color: #22c55e; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <button id="newLevel">New Level</button>
+  <span>seed: <strong id="seedLabel">–</strong></span>
+  <span id="keyLabel"></span>
+</div>
+<div id="board"></div>
+<div id="status"></div>
+<script type="module">
+import { shippedLevel, ROWS, COLS } from './dungeon.js';
+
+const board = document.getElementById('board');
+const seedLabel = document.getElementById('seedLabel');
+const keyLabel = document.getElementById('keyLabel');
+const statusEl = document.getElementById('status');
+board.style.gridTemplateColumns = `repeat(${COLS}, auto)`;
+
+let level = null;
+let player = null;
+let hasKey = false;
+let solved = false;
+
+function newLevel(seed) {
+  if (seed === undefined) seed = Math.floor(Math.random() * 2 ** 31);
+  level = shippedLevel(Number(seed));
+  player = [...level.start];
+  hasKey = false;
+  solved = false;
+  seedLabel.textContent = level.seed;
+  render();
+}
+
+const GLYPH = { S: '\u{1F6AA}', E: '\u{1F3C1}', K: '\u{1F511}', D: '\u{1F512}' };
+
+function render() {
+  board.replaceChildren();
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const t = level.grid[r][c];
+      const div = document.createElement('div');
+      div.className = 'tile' + (t === '#' ? ' wall' : '');
+      if (player[0] === r && player[1] === c) {
+        div.textContent = '\u{1F9DD}';
+      } else if (t === 'K' && hasKey) {
+        // picked up — plain floor now
+      } else if (t === 'D' && hasKey) {
+        div.textContent = '\u{1F513}';
+      } else if (GLYPH[t]) {
+        div.textContent = GLYPH[t];
+      }
+      board.appendChild(div);
+    }
+  }
+  keyLabel.textContent = hasKey ? '\u{1F511} key collected' : '';
+  statusEl.textContent = solved ? 'Solved!' : '';
+}
+
+function move(dr, dc) {
+  if (solved) return;
+  const nr = player[0] + dr, nc = player[1] + dc;
+  if (nr < 0 || nc < 0 || nr >= ROWS || nc >= COLS) return;
+  const t = level.grid[nr][nc];
+  if (t === '#') return;
+  if (t === 'D' && !hasKey) return;
+  player = [nr, nc];
+  if (t === 'K') hasKey = true;
+  if (t === 'E') solved = true;
+  render();
+}
+
+const KEYS = {
+  ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1],
+  w: [-1, 0], s: [1, 0], a: [0, -1], d: [0, 1],
+  W: [-1, 0], S: [1, 0], A: [0, -1], D: [0, 1],
+};
+window.addEventListener('keydown', e => {
+  const d = KEYS[e.key];
+  if (!d) return;
+  e.preventDefault();
+  move(d[0], d[1]);
+});
+
+document.getElementById('newLevel').addEventListener('click', () => newLevel());
+
+// Page interface contract (spec §6) for the external harness oracle.
+window.__demo = {
+  newLevel(seed) { newLevel(seed); },
+  getLevel() { return level; },
+};
+
+newLevel();
+</script>
+</body>
+</html>
